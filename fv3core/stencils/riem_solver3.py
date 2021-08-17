@@ -15,8 +15,8 @@ from gt4py.gtscript import (
 import fv3core.utils.global_constants as constants
 import fv3core.utils.gt4py_utils as utils
 from fv3core._config import RiemannConfig
-from fv3core.decorators import FrozenStencil
-from fv3core.stencils.sim1_solver import Sim1Solver
+from fv3core.decorators import FrozenStencil, clear_stencils, merge_stencils
+from fv3core.stencils.sim1_solver import sim1_solver
 from fv3core.utils.grid import GridIndexing
 from fv3core.utils.typing import FloatField, FloatFieldIJ
 
@@ -110,27 +110,27 @@ class RiemannSolver3:
     """
 
     def __init__(self, grid_indexing: GridIndexing, config: RiemannConfig):
-        self._sim1_solve = Sim1Solver(
-            config.p_fac,
-            grid_indexing.isc,
-            grid_indexing.iec,
-            grid_indexing.jsc,
-            grid_indexing.jec,
-            grid_indexing.domain[2] + 1,
-        )
         if config.a_imp <= 0.999:
             raise NotImplementedError("a_imp <= 0.999 is not implemented")
         riemorigin = grid_indexing.origin_compute()
         domain = grid_indexing.domain_compute(add=(0, 0, 1))
         shape = grid_indexing.max_shape
+        self._p_fac = config.p_fac
         self._tmp_dm = utils.make_storage_from_shape(shape, riemorigin)
         self._tmp_pe_init = utils.make_storage_from_shape(shape, riemorigin)
         self._tmp_pm = utils.make_storage_from_shape(shape, riemorigin)
         self._tmp_pem = utils.make_storage_from_shape(shape, riemorigin)
         self._tmp_peln_run = utils.make_storage_from_shape(shape, riemorigin)
         self._tmp_gm = utils.make_storage_from_shape(shape, riemorigin)
+
+        clear_stencils()
         self._precompute_stencil = FrozenStencil(
             precompute,
+            origin=riemorigin,
+            domain=domain,
+        )
+        self._compute_sim1_solve = FrozenStencil(
+            func=sim1_solver,
             origin=riemorigin,
             domain=domain,
         )
@@ -140,6 +140,7 @@ class RiemannSolver3:
             origin=riemorigin,
             domain=domain,
         )
+        merge_stencils()
 
     def __call__(
         self,
@@ -211,18 +212,21 @@ class RiemannSolver3:
             ptk,
         )
 
-        self._sim1_solve(
-            dt,
-            self._tmp_gm,
-            cappa,
-            pe,
-            self._tmp_dm,
-            self._tmp_pm,
-            self._tmp_pem,
+        self._compute_sim1_solve(
             w,
+            self._tmp_dm,
+            self._tmp_gm,
             delz,
             pt,
+            self._tmp_pm,
+            pe,
+            self._tmp_pem,
             wsd,
+            cappa,
+            dt,
+            2.0 * dt * dt,  # tlg
+            1.0 / dt,       # rdt
+            self._p_fac,
         )
 
         self._finalize_stencil(

@@ -164,8 +164,14 @@ class FrozenStencil:
             group_id, _, is_last_call = _stencil_merger.merged_position(self)
             if not is_last_call:
                 return
-            args, kwargs = _stencil_merger.merge_args(group_id)
+
+            top_stencil = _stencil_merger._stencil_groups[group_id][0]
+            self._argument_names = top_stencil._argument_names
+            self._field_origins = top_stencil._field_origins
+            self._stencil_run_kwargs["_origin_"] = self._field_origins
+
             stencil_object = _stencil_merger.merged_stencil(group_id)
+            args, kwargs = _stencil_merger.merge_args(group_id)
 
         if self.stencil_config.validate_args:
             if __debug__ and "origin" in kwargs:

@@ -6,7 +6,6 @@ import gt4py
 from gt4py.definitions import BuildOptions
 from gt4py.stencil_builder import StencilBuilder
 from gt4py.stencil_object import StencilObject
-from gt4py.storage import Storage
 
 # from fv3core.decorators import FrozenStencil
 
@@ -72,47 +71,34 @@ class StencilMerger(object, metaclass=Container):
         return self._merged_stencils[group_id]
 
     def merge_args(self, group_id: int) -> Tuple[List[Any], Dict[str, Any]]:
+        all_arg_names = self._stencil_groups[group_id][0]._argument_names
+        merged_args = [None] * len(all_arg_names)
+        merged_kwargs = {}
+
         stencil_names = self._merged_groups[group_id]
-        merged_args = list(self._saved_args[stencil_names[0]]["args"])
-        merged_kwargs = self._saved_args[stencil_names[0]]["kwargs"]
+        for stencil_name in stencil_names:
+            saved_args = self._saved_args[stencil_name]
+            merged_kwargs.update(saved_args["kwargs"])
 
-        param_pos = -1
-        for i, arg in reversed(list(enumerate(merged_args))):
-            if isinstance(arg, Storage):
-                param_pos = i + 1
-                break
+            for arg_index, arg_name in enumerate(saved_args["arg_names"]):
+                merged_index = all_arg_names.index(arg_name)
+                merged_args[merged_index] = saved_args["args"][arg_index]
 
-        for i in range(1, len(stencil_names)):
-            args = self._saved_args[stencil_names[i]]["args"]
-            for arg in args:
-                arg_found: bool = False
-                for merged_arg in merged_args:
-                    arg_found = id(arg) == id(merged_arg)
-                    if arg_found:
-                        break
-                if not arg_found:
-                    if param_pos >= 0:
-                        if isinstance(arg, Storage):
-                            merged_args.insert(param_pos, arg)
-                            param_pos += 1
-                        else:
-                            merged_args.append(arg)
-                    else:
-                        merged_args.append(arg)
-
-            kwargs = self._saved_args[stencil_names[i]]["kwargs"]
-            merged_kwargs.update({name: value for name, value in kwargs.items()})
-
-        self._saved_args.clear()
         return merged_args, merged_kwargs
 
     def save_args(self, stencil: "FrozenStencil", *args, **kwargs) -> None:
-        self._saved_args[stencil.name] = dict(args=args, kwargs=kwargs)
+        self._saved_args[stencil.name]["args"] = args
+        self._saved_args[stencil.name]["kwargs"] = kwargs
 
     def merge(self) -> None:
         self._merged_groups.clear()
         for group_id, stencil_group in enumerate(self._stencil_groups):
             if len(stencil_group) > 1:
+                for stencil in stencil_group:
+                    self._saved_args[stencil.name] = dict(
+                        arg_names=stencil._argument_names, args=[], kwargs={}
+                    )
+
                 top_stencil = stencil_group[0]
                 top_ir = top_stencil.build_info["def_ir"]
 
@@ -120,24 +106,16 @@ class StencilMerger(object, metaclass=Container):
                 for next_stencil in stencil_group[1:]:
                     next_ir = next_stencil.build_info["def_ir"]
                     top_ir = self._merge_irs(top_ir, next_ir)
-                    arg_names = [
-                        arg_name
-                        for arg_name in next_stencil._argument_names
-                        if arg_name not in top_stencil._argument_names
-                    ]
 
-                    top_stencil._argument_names += tuple(arg_names)
+                    top_stencil._argument_names = tuple(
+                        [arg.name for arg in top_ir.api_signature]
+                    )
                     top_stencil._field_origins.update(next_stencil._field_origins)
-                    written_fields = [
+                    top_stencil._written_fields.extend([
                         written_field
                         for written_field in next_stencil._written_fields
                         if written_field not in top_stencil._written_fields
-                    ]
-                    top_stencil._written_fields.extend(written_fields)
-
-                    next_stencil._argument_names = top_stencil._argument_names
-                    next_stencil._field_origins = top_stencil._field_origins
-                    next_stencil._written_fields = top_stencil._written_fields
+                    ])
 
                     self._merged_groups[group_id].append(next_stencil.name)
 

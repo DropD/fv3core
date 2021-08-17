@@ -140,7 +140,33 @@ dmypy.json
 # GT4Py
 **/.gt_cache/
 gt4py/
+*.cacheinfo
+m_*__*_*.py
+bindings.cu
+computation.?pp
 
 # Run outputs
 examples/wrapped/output/
 examples/wrapped/plots/
+
+# Data files
+*.bz2
+*.csv
+*.dat
+*.gz
+*.json
+*.out
+*.txt
+*.htm*
+*.pkl
+
+# Prof files
+*.prof
+*.nvvp
+*.dot
+*.qdrep
+
+# Images
+*.jpg
+*.png
+*.pdf
