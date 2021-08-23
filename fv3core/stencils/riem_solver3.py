@@ -31,7 +31,7 @@ def precompute(
     zh: FloatField,
     q_con: FloatField,
     pem: FloatField,
-    peln: FloatField,
+    peln_run: FloatField,
     pk3: FloatField,
     gm: FloatField,
     dz: FloatField,
@@ -46,25 +46,23 @@ def precompute(
     with computation(FORWARD):
         with interval(0, 1):
             pem = ptop
-            peln = peln1
+            peln_run = peln1
             pk3 = ptk
             peg = ptop
-            pelng = peln1
         with interval(1, None):
             # TODO consolidate with riem_solver_c, same functions, math functions
             pem = pem[0, 0, -1] + dm[0, 0, -1]
-            peln = log(pem)
+            peln_run = log(pem)
             # Excluding contribution from condensates
             # peln used during remap; pk3 used only for p_grad
             peg = peg[0, 0, -1] + dm[0, 0, -1] * (1.0 - q_con[0, 0, -1])
-            pelng = log(peg)
             # interface pk is using constant akap
-            pk3 = exp(constants.KAPPA * peln)
+            pk3 = exp(constants.KAPPA * peln_run)
     with computation(PARALLEL), interval(...):
         gm = 1.0 / (1.0 - cappa)
-        dm = dm * constants.RGRAV
+        dm *= constants.RGRAV
     with computation(PARALLEL), interval(0, -1):
-        pm = (peg[0, 0, 1] - peg) / (pelng[0, 0, 1] - pelng)
+        pm = (peg[0, 0, 1] - peg) / (log(peg[0, 0, 1]) - log(peg))
         dz = zh[0, 0, 1] - zh
 
 
